@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Lists all the apks for a given app."""
+"""Uploads an apk to the alpha track."""
 
 import argparse
 
@@ -23,6 +23,8 @@ import httplib2
 from oauth2client import client
 
 
+TRACK = 'alpha'  # Can be 'alpha', beta', 'production' or 'rollout'
+
 SERVICE_ACCOUNT_EMAIL = (
     'ENTER_YOUR_SERVICE_ACCOUNT_EMAIL_HERE@developer.gserviceaccount.com')
 
@@ -30,6 +32,10 @@ SERVICE_ACCOUNT_EMAIL = (
 argparser = argparse.ArgumentParser(add_help=False)
 argparser.add_argument('package_name',
                        help='The package name. Example: com.android.sample')
+argparser.add_argument('apk_file',
+                       nargs='?',
+                       default='test.apk',
+                       help='The path to the APK file to upload.')
 
 
 def main():
@@ -58,21 +64,34 @@ def main():
   package_name = flags.package_name
 
   try:
-
     edit_request = service.edits().insert(body={}, packageName=package_name)
     result = edit_request.execute()
     edit_id = result['id']
 
-    apks_result = service.edits().apks().list(
+    apk_response = service.edits().apks().upload(
+        editId=edit_id,
+        packageName=package_name,
+        media_body=apk_file).execute()
+
+    print 'Version code %d has been uploaded' % apk_response['versionCode']
+
+    track_response = service.edits().tracks().update(
+        editId=edit_id,
+        track=TRACK,
+        packageName=package_name,
+        body={u'versionCodes': [apk_response['versionCode']]}).execute()
+
+    print 'Track %s is set for version code(s) %s' % (
+        track_response['track'], str(track_response['versionCodes']))
+
+    commit_request = service.edits().commit(
         editId=edit_id, packageName=package_name).execute()
 
-    for apk in apks_result['apks']:
-      print 'versionCode: %s, binary.sha1: %s' % (
-          apk['versionCode'], apk['binary']['sha1'])
+    print 'Edit "%s" has been committed' % (commit_request['id'])
 
   except client.AccessTokenRefreshError:
     print ('The credentials have been revoked or expired, please re-run the '
            'application to re-authorize')
 
 if __name__ == '__main__':
-  main()
+  main(sys.argv)
